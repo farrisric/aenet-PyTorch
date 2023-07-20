@@ -16,6 +16,16 @@ import sys
 import resource
 from torch.utils.data import DataLoader
 
+import pyro
+from pyro.nn import PyroModule, PyroSample
+import pyro.distributions as dist
+from pyro.infer.autoguide import AutoDiagonalNormal
+from pyro.nn import PyroSample
+from pyro.infer.autoguide import AutoMultivariateNormal, init_to_mean
+from pyro.nn.module import to_pyro_module_
+from pyro.distributions import constraints
+from pyro.infer import SVI, Trace_ELBO
+
 from data_classes import *
 from read_input import *
 from read_trainset import *
@@ -121,6 +131,40 @@ if tin.verbose: io_network_initialize(tin)
 
 model = NetAtom(tin.networks_param["input_size"], tin.networks_param["hidden_size"],
 			    tin.sys_species, tin.networks_param["activations"], tin.alpha, device).double()
+
+to_pyro_module_(model)
+for m in model.modules():
+	for name, value in list(m.named_parameters(recurse=False)):
+		if name == 'weight':
+			setattr(m, name, PyroSample(prior=dist.Normal(0, 1)
+											.expand(value.shape)
+											.to_event(value.dim())))
+		if name == 'bias':
+			setattr(m, name, PyroSample(prior=dist.Normal(0, 1)
+											.expand(value.shape)
+											.to_event(value.dim())))
+			
+guide = AutoDiagonalNormal(model)			
+adam = pyro.optim.Adam({"lr": 0.05})
+svi = SVI(model, guide, adam, loss=Trace_ELBO())
+
+grouped_train_loader = DataLoader(grouped_train_data, batch_size=1, shuffle=False,
+                                  collate_fn=custom_collate, num_workers=0)
+grouped_valid_loader = DataLoader(grouped_valid_data, batch_size=1, shuffle=False,
+                                  collate_fn=custom_collate, num_workers=0)
+
+for i_batch, data_batch in enumerate(grouped_train_loader):
+	model.forward(data_batch[0][10], data_batch[0][12])
+
+pyro.clear_param_store()
+for j in range(5000):
+    # calculate the loss and take a gradient step
+    loss = svi.step(x_train, y_train)
+    if j % 100 == 0:
+        print("[iteration %04d] loss: %.4f" % (j + 1, loss/len(x_train)))
+	
+
+
 model.to(device)
 init_optimizer(tin, model)
 if tin.mode == "train":
@@ -144,6 +188,7 @@ if tin.verbose: io_train_start()
 t = time.time()
 iter_error_trn = []
 iter_error_tst = []
+
 for epoch in range(tin.epoch_size):
 
 	train_error, train_E_error, train_F_error = step_train_any(model, grouped_train_loader, E_scaling, tin.networks_param["input_size"], max_nnb)

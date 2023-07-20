@@ -2,164 +2,119 @@ import torch
 import torch.nn as nn
 import numpy as np
 from collections import OrderedDict
+from network import NetAtom
 
+import pyro
+from pyro.nn import PyroModule, PyroSample
+import pyro.distributions as dist
+from pyro.infer.autoguide import AutoDiagonalNormal
+from pyro.nn import PyroSample
+from pyro.infer.autoguide import AutoMultivariateNormal, init_to_mean
+from pyro.nn.module import to_pyro_module_
+from pyro.distributions import constraints		
+from pyro.infer import SVI, Trace_ELBO, TraceGraph_ELBO
 
-class NetAtom(nn.Module):
-	"""
-	ANN for each atomic element present in the training set
-		input_size  :: Dimension of the descriptor vectors
-		hidden_size :: Number of nodes in the hidden layers
-		activations :: Activation functions of each layer
-		functions   :: List of functions that are applied in the ANN. A series of
-						Linear + Activation + Linear + Activation + ... + Linear
-	"""
-	def __init__(self, input_size, hidden_size, species, activations, alpha, device):
-		super(NetAtom, self).__init__()
-		self.input_size = input_size
-		self.hidden_size = hidden_size
-		self.species = species
-		self.active_names = activations
-		self.alpha = torch.tensor(alpha)
-		self.device = device
+class BayesianNetAtoms(PyroModule):
+	def __init__(self, net):
+		super().__init__()
+		self.species = net.species
+		self.device = net.device
+		self.model = net
+		to_pyro_module_(self.model)
+		for m, iets in zip(self.model.modules(), self.species):
+			for i, name, value in enumerate(list(m.named_parameters(recurse=False))):
+				if name == 'weight':
+					setattr(m, f'{iets}_h{i}_{name}', PyroSample(prior=dist.Normal(0, 1)
+													.expand(value.shape)
+													.to_event(value.dim())))
+				if name == 'bias':
+					setattr(m, f'{iets}_h{i}_{name}', PyroSample(prior=dist.Normal(0, 1)
+													.expand(value.shape)
+													.to_event(value.dim())))
+	# def model(self, grp_descrp, logic_reduce, y):
+	# 	pass
 
-		N_fun = [len(hidden_size[i])+1 for i in range(len(species)) ]
+	def initialize(self):
+		self.optim = pyro.optim.Adam({"lr": 0.05})
+		self.loss = TraceGraph_ELBO()
+		self.svi = SVI(self.model, self.guide, self.optim, loss=self.loss)
+
+	def step(self, grp_descrp, logic_reduce, grp_energy):
+		return self.svi.step(grp_descrp, logic_reduce, grp_energy)
 	
-		self.linear  = nn.Identity()
-		self.tanh    = nn.Tanh()
-		self.sigmoid = nn.Sigmoid()
-		self.activations = []
-		for i in range(len(species)):
-			aux = []
-			for j in range(len(hidden_size[i])):
-				if activations[i][j] == "linear":
-					aux.append(self.linear)
-				if activations[i][j] == "tanh":
-					aux.append(self.tanh)
-				if activations[i][j] == "sigmoid":
-					aux.append(self.sigmoid)
-			self.activations.append(aux)
+	def guide(self, grp_descrp, logic_reduce, grp_energy=None):
+		for m, iets in zip(self.model.modules(), self.species):
+			for i, name, value in enumerate(list(m.named_parameters(recurse=False))):
+				if name == 'weight':
+					setattr(m, f'{iets}_h{i}_{name}', PyroSample(prior=dist.Normal(0, 1)
+													.expand(value.shape)
+													.to_event(value.dim())))
+				if name == 'bias':
+					setattr(m, f'{iets}_h{i}_{name}', PyroSample(prior=dist.Normal(0, 1)
+													.expand(value.shape)
+													.to_event(value.dim())))
 
-		self.functions = []
-		for i in range(len(species)):
-			function_i = OrderedDict()
-			name1 = "Linear_Sp"+str(i+1)+"_F"+str(1)
-			name2 = "Active_Sp"+str(i+1)+"_F"+str(1)
-
-			function_i[name1] = nn.Linear(input_size[i], hidden_size[i][0])
-			function_i[name2] = self.activations[i][0]
-			for j in range(1,N_fun[i]-1):
-				name1 = "Linear_Sp"+str(i+1)+"_F"+str(j+1)
-				name2 = "Active_Sp"+str(i+1)+"_F"+str(j+1)
-				function_i[name1] = nn.Linear(hidden_size[i][j-1], hidden_size[i][j])
-				function_i[name2] = self.activations[i][j]
-			name1 = "Linear_Sp"+str(i+1)+"_F"+str(N_fun[i])
-			function_i[name1] = nn.Linear(hidden_size[i][-1], 1)
-
-			self.functions.append( nn.Sequential(function_i) ) 
-		self.functions = nn.ModuleList(self.functions)
-
-
-	def forward(self, grp_descrp, logic_reduce):
-		"""
-		[Energy training] Compute atomic energy for each atom in the current batch.
-		INPUT:
-			grp_descrp    :: Descriptors of the atoms of the batch, ordered by element, without considering to which structure belongs each
-			logic_reduce  :: Auxiliar tensor to reorder the atomic contributions back to each structure
-		OUTPUT:
-			partial_E_ann :: atomic energies of all the atoms of all the structures grouped by species for the whole batch
-			list_E_ann    :: total ANN energies of each structure in the batch
-		"""
-
-		# Compute atomic energies of all the atoms of each element
 		partial_E_ann = [0 for i in range(len(self.species))]
-		for iesp in range(len(self.species)):
-			partial_E_ann[iesp] = self.functions[iesp](grp_descrp[iesp])
+		sigmas = {iets: pyro.sample(f'sigma_{iets}', dist.Uniform(0., 10.)) for iets in self.species}
 
-		# Gather back all atoms corresponding to the same strucuture from partial_E_ann
-		list_E_ann = torch.zeros( (len(logic_reduce[0])), device=self.device ).double()
+		# Local Energies calculation per species
 		for iesp in range(len(self.species)):
-			list_E_ann = list_E_ann + torch.einsum( "ij,ki->k", partial_E_ann[iesp], logic_reduce[iesp] )
+			partial_E_ann[iesp] = self.model[iesp](grp_descrp[iesp])
 
+		new_partial_E_ann = [0 for i in range(len(self.species))]
+		for i, iets in enumerate(self.species):
+			with pyro.plate(f'data_{iets}', len(grp_descrp[iesp])):
+				new_partial_E_ann[i] = pyro.sample(f'local_{iets}', dist.Normal(partial_E_ann[iesp], sigmas[iets]))
+		
+		list_E_ann = torch.zeros((len(logic_reduce[0])), device=self.device)
+		for iesp in range(len(self.species)):
+			list_E_ann = list_E_ann + torch.einsum( "ij,ki->k", new_partial_E_ann[iesp], logic_reduce[iesp])
+
+		sigma_tot = pyro.sample('sigma_tot', dist.Uniform(0., 10.))
+		
+
+	def forwardino(self, grp_descrp, logic_reduce, grp_energy=None):
+		partial_E_ann = [0 for i in range(len(self.species))]
+		sigmas = {f'sigma_{iets}': pyro.sample(iets, dist.Uniform(0., 10.)) for iets in self.species}
+
+		# Local Energies calculation per species
+		for iesp in range(len(self.species)):
+			partial_E_ann[iesp] = self.model[iesp](grp_descrp[iesp])
+
+		new_partial_E_ann = [0 for i in range(len(self.species))]
+		for i, iets in enumerate(self.species):
+			with pyro.plate(f'data_{iets}', len(grp_descrp[iesp])):
+				new_partial_E_ann[i] = pyro.sample(f'local_{iets}', dist.Normal(partial_E_ann[iesp], sigmas[f'sigma_{iets}']))
+		
+		list_E_ann = torch.zeros((len(logic_reduce[0])), device=self.device)
+		for iesp in range(len(self.species)):
+			list_E_ann = list_E_ann + torch.einsum( "ij,ki->k", new_partial_E_ann[iesp], logic_reduce[iesp])
+
+		sigma_tot = pyro.sample('sigma_tot', dist.Uniform(0., 10.))
+		with pyro.plate('total_energy', len(logic_reduce[0])):
+			pyro.sample('obs', dist.Normal(list_E_ann, sigma_tot), obs=grp_energy)				
 		return list_E_ann
 
+		# with pyro.plate('total_energy', len(grp_energy)):
+		# 	total_energy = pyro.sample('obs', dist.Normal(list_E_ann, sigma), obs=grp_energy)
+		# # sigmas = {pyro.sample(f'sigma_{iets}', dist.Uniform(0., 10.)) for iets in self.species}
+		# # local_Es = {iets : None for iets in self.species}
+		# # for i, iets in enumerate(self.species):
+		# # 	with pyro.plate(f'data_{iets}', len(grp_descrp[i].shape[0])):
+		# # 		local_Es[iets] = pyro.sample(f'local_{iets}', dist.Normal(partial_E_ann[iesp], sigmas[f'sigma_{iets}']))
 
-	def forward_F(self, group_descrp, group_sfderiv_i, group_sfderiv_j, group_indices_F,
-				  grp_indices_F_i, logic_reduce, input_size, max_nnb):
-		"""
-		[Force training] Compute atomic energy and forces for each atom in the current batch.
-		"""
+		# list_E_ann = torch.zeros((len(logic_reduce[0])), device=self.device)
+		# for iesp in range(len(self.species)):
+		# 	list_E_ann = list_E_ann + torch.einsum( "ij,ki->k", partial_E_ann[iesp], logic_reduce[iesp] )
 
-		E_atomic_ann = [0 for i in range(len(self.species))] #torch.empty((0,1), requires_grad=True).double()
-		aux_F_i      = torch.empty((0, 3 ), requires_grad=True, device=self.device).double()
-		aux_F_j      = torch.empty((0, max_nnb, 3), device=self.device , requires_grad=True).double()
+		# sigma = pyro.sample('sigma', dist.Uniform(0., 10.))
+		# with pyro.plate('data', len(grp_energy)):
+		# 	obs = pyro.sample('obs', dist.Normal(list_E_ann, sigma), obs=grp_energy)
+		# return list_E_ann
 
-		for iesp in range( len(self.species) ):
+if __name__ == '__main__':
+	model = NetAtom(input_size=[20,20], hidden_size=[[5,5],[15,15]], species=['Pd', 'O'], activations=[['tanh','tanh'],['tanh','tanh']], alpha=0.1, device='cpu')
 
-			group_descrp[iesp].requires_grad_(True)
-
-			partial_E_ann = self.functions[iesp]( group_descrp[iesp] )
-
-			aux_dE_dG, = torch.autograd.grad(partial_E_ann, group_descrp[iesp],
-                                    grad_outputs=partial_E_ann.data.new(partial_E_ann.shape).fill_(1),
-                                    create_graph=True)#, retain_graph = True)
-
-			E_atomic_ann[iesp] = partial_E_ann
-
-			aux_F_j = torch.cat( (aux_F_j, torch.einsum("ik,ijkl->ijl", aux_dE_dG.double(), group_sfderiv_j[iesp].double())) )
-			aux_F_i = torch.cat( (aux_F_i, torch.einsum("ik,ikl->il", aux_dE_dG.double(), group_sfderiv_i[iesp].double())) )
-
-
-
-		aux_F_j    = torch.cat( ( aux_F_j, torch.zeros(1, aux_F_j.shape[1], 3, device=self.device) ) )
-		aux_F_flat = aux_F_j.reshape( (aux_F_j.shape[0]*aux_F_j.shape[1],3) )
-		
-		aux_shape =  (group_indices_F.shape[0], group_indices_F.shape[1], 3)
-		flatt_indices = torch.where(group_indices_F==-1,len(aux_F_flat)-1,group_indices_F)
-		flatt_indices = flatt_indices.flatten()
-
-		F_ann = -torch.index_select(aux_F_i,0,grp_indices_F_i) \
-		        -torch.sum( torch.index_select(aux_F_flat,0,flatt_indices).reshape(aux_shape), dim=1 )
-
-
-		list_E_ann = torch.zeros( (len(logic_reduce[0])), device=self.device ).double()
-		for iesp in range(len(self.species)):
-			list_E_ann = list_E_ann + torch.einsum( "ij,ki->k", E_atomic_ann[iesp], logic_reduce[iesp] )
-
-		return list_E_ann, F_ann
-
-
-	def get_loss_RMSE(self, grp_descrp, grp_energy, logic_reduce, grp_N_atom):
-		"""
-		[Energy training] Compute root mean squared error of energies in the batch
-		"""
-
-		list_E_ann = self.forward(grp_descrp, logic_reduce  )
-		N_data = len(list_E_ann)
-
-		differences = (list_E_ann - grp_energy)
-		l2 = torch.sum( differences**2/grp_N_atom**2 )
-
-		return l2, N_data
-
-
-	def get_loss_RMSE_F(self, group_energy, group_N_atom,  group_descrp, group_sfderiv_i,
-		                group_sfderiv_j, group_indices_F, grp_indices_F_i, logic_reduce,
-		                group_forces, input_size, max_nnb, E_scaling):
-		"""
-		[Force training] Compute root mean squared error of energies and forces in the batch
-		"""
-
-		list_E_ann, list_F_ann = self.forward_F(group_descrp, group_sfderiv_i, group_sfderiv_j,
-			                                    group_indices_F, grp_indices_F_i,
-			                                    logic_reduce, input_size, max_nnb)
-
-		N_data_E = len(list_E_ann)
-		N_data_F = len(list_F_ann)
-		
-		diff_E = list_E_ann - group_energy
-		diff_F = list_F_ann - group_forces
-
-		l2_E = torch.sum( diff_E**2/group_N_atom**2 )
-		l_F  = torch.sqrt( torch.sum( diff_F**2) / N_data_F )
-
-		return l2_E, l_F, N_data_E, N_data_F
+	bayesian_model = BayesianNetAtoms(model)
+	print(bayesian_model)
+	

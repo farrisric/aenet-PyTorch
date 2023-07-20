@@ -47,7 +47,7 @@ def step_train_any(net, train_data, E_scaling, input_size, max_nnb):
 
 		if train_data.dataset.train_energy:
 			l2_E, N_data2_E = net.get_loss_RMSE(data_batch[0][10], data_batch[0][11], data_batch[0][12], data_batch[0][14])
-
+			
 			N_data_energy += N_data2_E
 
 		N_data_E_tot = N_data1_E + N_data2_E
