@@ -64,7 +64,7 @@ class BayesianNeuralNetwork():
             pyro.sample('obs', dist.Normal(list_E_ann, sigma), obs=grp_energy)
         return list_E_ann
 
-    def train(self, grouped_train_loader ,epochs, initial_lr = 0.001):
+    def train(self, grouped_train_loader ,epochs, initial_lr = 0.001, verbose=False):
         pyro.clear_param_store()
         gamma = 0.1  # final learning rate will be gamma * initial_lr
         lrd = gamma ** (1 / epochs)
@@ -76,35 +76,63 @@ class BayesianNeuralNetwork():
             loss = 0
             for data_batch in grouped_train_loader:
                 grp_descrp, grp_energy, logic_reduce = data_batch[0][10], data_batch[0][11], data_batch[0][12]
-                grp_descrp[0] = grp_descrp[0].float()
-                grp_descrp[1] = grp_descrp[1].float()
+                
+                for i in range(len(grp_descrp)):
+                    grp_descrp[i] = grp_descrp[i].float()
 
-                logic_reduce[0] = logic_reduce[0].float()
-                logic_reduce[1] = logic_reduce[1].float()
+                for i in range(len(logic_reduce)):
+                    logic_reduce[i] = logic_reduce[i].float()
+
                 loss += svi.step(grp_descrp, logic_reduce, grp_energy) 
-            #if j % 100 == 0:
-                #print("[EPOCH LOSS %04d] loss: %.4f" % (j + 1, loss / len(logic_reduce[0])))
+            if verbose:
+                if j % 100 == 0:
+                    print("[EPOCH LOSS %04d] loss: %.4f" % (j + 1, loss / len(logic_reduce[0])))
+
+                if j % 1000 == 0:
+                    l2, _ = self.get_loss_RMSE(grouped_train_loader, num_samples=800)
+                    print("[EPOCH RMSD %04d] loss: %.4f" % (j + 1, l2))
         return loss / len(logic_reduce[0])
     
-    def predict(self, grp_descrp, logic_reduce, num_samples=8000):
+    def predict(self, grouped_loader, num_samples=8000):
         predictive = Predictive(self.model, guide=self.guide, num_samples=num_samples,
                         return_sites=("obs", "_RETURN"))
+        grp_descrp, grp_energy, logic_reduce, grp_N_atoms = get_train_test(grouped_loader)
+        
         return predictive(grp_descrp, logic_reduce)
     
-    def get_loss_RMSE(self, grp_descrp, grp_energy, logic_reduce, grp_N_atom, num_samples=800):
+    def get_loss_RMSE(self, grouped_loader, num_samples=800):
         """
 		[Energy training] Compute root mean squared error of energies in the batch
 		"""
-        list_E_ann = self.predict(grp_descrp, logic_reduce, num_samples)['obs']
+        grp_descrp, grp_energy, logic_reduce, grp_N_atoms = get_train_test(grouped_loader)
+        list_E_ann = self.predict(grouped_loader, num_samples=num_samples)['obs']
         differences = (list_E_ann - grp_energy)
 
-        l2s = torch.sum( differences**2/grp_N_atom**2, dim=1)
+        l2s = torch.sum( differences**2/grp_N_atoms**2, dim=1)
         l2 = torch.mean(l2s)
         std_l2 = torch.std(l2s)
         
         return l2, std_l2
 
+def get_batch(tin, list_structures_energy, max_nnb):
+    dataset_energy = StructureDataset(list_structures_energy, tin.sys_species, tin.networks_param["input_size"], max_nnb)
+        
+    dataset_energy_size = len(dataset_energy)
+
+    # Normalize
+    # E_scaling, E_shift = tin.trainset_params.E_scaling, tin.trainset_params.E_shift
+    # sfval_avg, sfval_cov = tin.setup_params.sfval_avg, tin.setup_params.sfval_cov
+    # dataset_energy.normalize_E(tin.trainset_params.E_scaling,tin.trainset_params.E_shift)
+    # stp_shift, stp_scale = dataset_energy.normalize_stp(sfval_avg, sfval_cov)
+
+    energy_data = PrepDataloader(dataset=dataset_energy, train_forces=False, sampler=range(len(dataset_energy)), N_batch=1)   
+
+    grouped_data = GroupedDataset(energy_data, None,)
     
+    grouped_loader = DataLoader(grouped_data, batch_size=1, shuffle=False,
+                                  collate_fn=custom_collate, num_workers=0) 
+    return grouped_loader
+
 def select_batches(tin, trainset_params, device, list_structures_energy, list_structures_forces,
 				   max_nnb, N_batch_train, N_batch_test, N_batch_valid, train_sampler_E, test_sampler_E, valid_sampler_E):
         """
@@ -167,14 +195,14 @@ def get_sets_from_indices(tin, max_nnb, training_indices, test_indices, valid_in
     
     return grouped_train_loader, grouped_test_loader
 
-def get_train_test(grouped_train_loader):
-    for data_batch in grouped_train_loader:
+def get_train_test(grouped_loader):
+    for data_batch in grouped_loader:
         grp_descrp, grp_energy, logic_reduce, grp_N_atoms = data_batch[0][10], data_batch[0][11], data_batch[0][12],data_batch[0][14]
 
-    grp_descrp[0] = grp_descrp[0].float()
-    grp_descrp[1] = grp_descrp[1].float()
+    for i in range(len(grp_descrp)):
+        grp_descrp[i] = grp_descrp[i].float()
 
-    logic_reduce[0] = logic_reduce[0].float()
-    logic_reduce[1] = logic_reduce[1].float()
+    for i in range(len(logic_reduce)):
+        logic_reduce[i] = logic_reduce[i].float()
 
     return grp_descrp, grp_energy, logic_reduce, grp_N_atoms

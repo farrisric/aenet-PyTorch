@@ -1,0 +1,4 @@
+RMSD valid set pre train 572.9598675002528
+RMSD test set pre train 195.26568601889298
+STD valid set before training: 2.3714271564404923
+STD test set before training: 2.453047296483438

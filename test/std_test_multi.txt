@@ -1,0 +1,42 @@
+RMSD valid set pre active learning 11.920079591814018
+STD valid set before active learning: 1.0670581566495563
+
+Training with 100 datapoints of std 1.0605366717638558
+RMSD after training: 14.316173594033275
+STD valid set after training: 1.28906418444484
+
+Training with 100 datapoints of std 1.083576337591988
+RMSD after training: 16.65581754959018
+STD valid set after training: 1.3399556927129934
+
+Training with 100 datapoints of std 1.0985997600319233
+RMSD after training: 19.81772685823072
+STD valid set after training: 1.383811709440195
+
+Training with 100 datapoints of std 1.1116332767906814
+RMSD after training: 9.758071655667099
+STD valid set after training: 1.3327547978555618
+
+Training with 100 datapoints of std 1.1266501952941137
+RMSD after training: 17.86366938695825
+STD valid set after training: 1.2334755221431193
+
+Training with 100 datapoints of std 1.1456185786436555
+RMSD after training: 16.823528940605318
+STD valid set after training: 1.2366481392482491
+
+Training with 100 datapoints of std 1.1784598025157802
+RMSD after training: 12.915474805032536
+STD valid set after training: 1.1516508771757137
+
+Training with 100 datapoints of std 1.215539033844245
+RMSD after training: 14.503398579161347
+STD valid set after training: 1.2961954250927892
+
+Training with 100 datapoints of std 1.252232873572031
+RMSD after training: 17.721880286872153
+STD valid set after training: 1.3446591564264143
+
+Training with 100 datapoints of std 1.3216532877632332
+RMSD after training: 15.904172528623015
+STD valid set after training: 1.3325104253919509
