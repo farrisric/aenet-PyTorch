@@ -31,6 +31,7 @@ class BayesianNeuralNetwork():
         self.species = net.species
         self.device = net.device
         self.guide = None
+        self.svi = None
         self.epochs = 0
         to_pyro_module_(self.net)
         self.initialize()
@@ -66,10 +67,12 @@ class BayesianNeuralNetwork():
 
     def train(self, grouped_train_loader ,epochs, initial_lr = 0.001, verbose=False):
         pyro.clear_param_store()
-        gamma = 0.1  # final learning rate will be gamma * initial_lr
-        lrd = gamma ** (1 / epochs)
-        optim = pyro.optim.ClippedAdam({'lr': initial_lr, 'lrd': lrd})
-        svi = SVI(self.model, self.guide, optim, loss=TraceMeanField_ELBO())
+
+        if not self.svi:
+            lrd = 0.1 ** (1 / epochs)
+            optim = pyro.optim.ClippedAdam({'lr': initial_lr, 'lrd': lrd})
+            self.svi = SVI(self.model, self.guide, optim, loss=TraceMeanField_ELBO())
+
         losses = []
         for j in range(epochs):
             self.epochs += 1
@@ -83,14 +86,15 @@ class BayesianNeuralNetwork():
                 for i in range(len(logic_reduce)):
                     logic_reduce[i] = logic_reduce[i].float()
 
-                loss += svi.step(grp_descrp, logic_reduce, grp_energy) 
+                loss += self.svi.step(grp_descrp, logic_reduce, grp_energy) 
+
             if verbose:
-                if j % 100 == 0:
+                if j % 100 == 0 and verbose['loss']:
                     print("[EPOCH LOSS %04d] loss: %.4f" % (j + 1, loss / len(logic_reduce[0])))
 
-                if j % 1000 == 0:
+                if j % 1000 == 0 and verbose['rmse']:
                     l2, _ = self.get_loss_RMSE(grouped_train_loader, num_samples=800)
-                    print("[EPOCH RMSD %04d] loss: %.4f" % (j + 1, l2))
+                    print("[EPOCH RMSE %04d] eV: %.4f" % (j + 1, l2))
         return loss / len(logic_reduce[0])
     
     def predict(self, grouped_loader, num_samples=8000):
