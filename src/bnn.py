@@ -12,7 +12,6 @@ import time
 import sys
 import resource
 from torch.utils.data import DataLoader
-import pickle
 
 from data_classes import *
 from read_input import *
@@ -48,7 +47,6 @@ class BayesianNeuralNetwork():
                     setattr(m, name, PyroSample(prior=dist.Normal(0, 10)
                                                     .expand(value.shape)
                                                     .to_event(value.dim())))
-                    
         self.guide = AutoDiagonalNormal(self.model)
 
 
@@ -112,23 +110,14 @@ class BayesianNeuralNetwork():
 		"""
         grp_descrp, grp_energy, logic_reduce, grp_N_atoms = get_train_test(grouped_loader)
         list_E_ann = self.predict(grouped_loader, num_samples=num_samples)['obs']
+        std_energies = torch.std(list_E_ann,0)
         differences = (list_E_ann - grp_energy)
 
         l2s = torch.sum( differences**2/grp_N_atoms**2, dim=1)
         l2 = torch.mean(l2s)
         std_l2 = torch.std(l2s)
         
-        return l2, std_l2
-    
-    def save(self, name_file):
-        with open(name_file, 'wb') as out:
-            pickle.dump(self, out)
-
-    @staticmethod
-    def load(name_file):
-        with open(name_file, 'rb') as calc:
-            return pickle.load(calc)
-
+        return l2, std_l2, std_energies
 
 def get_batch(tin, list_structures_energy, max_nnb):
     dataset_energy = StructureDataset(list_structures_energy, tin.sys_species, tin.networks_param["input_size"], max_nnb)
