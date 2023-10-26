@@ -11,6 +11,7 @@ import torch
 import time
 import sys
 import resource
+import pickle
 from torch.utils.data import DataLoader
 
 from data_classes import *
@@ -65,16 +66,16 @@ class BayesianNeuralNetwork():
             pyro.sample('obs', dist.Normal(list_E_ann, sigma), obs=grp_energy)
         return list_E_ann
 
-    def train(self, grouped_train_loader ,epochs, initial_lr = 0.001, verbose=False):
+    def train(self, grouped_train_loader, epochs, initial_lr = 0.001, gamma=0.1, verbose=False, filename=None):
         pyro.clear_param_store()
 
         if not self.svi:
-            lrd = 0.1 ** (1 / epochs)
+            lrd = gamma ** (1 / epochs)
             optim = pyro.optim.ClippedAdam({'lr': initial_lr, 'lrd': lrd})
             self.svi = SVI(self.model, self.guide, optim, loss=TraceMeanField_ELBO())
 
         losses = []
-        for j in range(epochs):
+        for j in range(1, epochs):
             self.epochs += 1
             loss = 0
             for data_batch in grouped_train_loader:
@@ -88,13 +89,17 @@ class BayesianNeuralNetwork():
 
                 loss += self.svi.step(grp_descrp, logic_reduce, grp_energy) 
 
+            if j % 1000 == 0:
+                if filename:
+                    self.save(filename)
+
             if verbose:
                 if j % 100 == 0 and verbose['loss']:
-                    print("[EPOCH LOSS %04d] loss: %.4f" % (j + 1, loss / len(logic_reduce[0])))
-
+                    print("[EPOCH LOSS %04d] loss: %.4f" % (j, loss / len(logic_reduce[0])))
+                    
                 if j % 1000 == 0 and verbose['rmse']:
-                    l2, _ = self.get_loss_RMSE(grouped_train_loader, num_samples=800)
-                    print("[EPOCH RMSE %04d] eV: %.4f" % (j + 1, l2))
+                    l2, _, _ = self.get_loss_RMSE(grouped_train_loader, num_samples=8000)
+                    print("[EPOCH RMSE %04d] eV: %.4f" % (j, l2))
         return loss / len(logic_reduce[0])
     
     def predict(self, grouped_loader, num_samples=8000):
@@ -104,7 +109,7 @@ class BayesianNeuralNetwork():
         
         return predictive(grp_descrp, logic_reduce)
     
-    def get_loss_RMSE(self, grouped_loader, num_samples=800):
+    def get_loss_RMSE(self, grouped_loader, num_samples=8000):
         """
 		[Energy training] Compute root mean squared error of energies in the batch
 		"""
@@ -118,6 +123,15 @@ class BayesianNeuralNetwork():
         std_l2 = torch.std(l2s)
         
         return l2, std_l2, std_energies
+
+    def save(self, name_file : str):
+        with open(name_file, 'wb') as out:
+            pickle.dump(self, out)
+
+    @staticmethod
+    def load(name_file):
+        with open(name_file, 'rb') as calc:
+            return pickle.load(calc)
 
 def get_batch(tin, list_structures_energy, max_nnb):
     dataset_energy = StructureDataset(list_structures_energy, tin.sys_species, tin.networks_param["input_size"], max_nnb)
