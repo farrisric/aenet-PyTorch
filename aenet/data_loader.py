@@ -280,8 +280,8 @@ class PrepDataloader(object):
 
 		group_energy        = []
 		index_from_database = []
-		group_descrp      = [ torch.empty( 0,self.dataset.input_size[iesp] ).double() for iesp in range(self.dataset.N_species) ]
-		group_forces      = torch.empty( 0,3 ).double()
+		group_descrp      = [ torch.empty( 0,self.dataset.input_size[iesp] )   for iesp in range(self.dataset.N_species) ]
+		group_forces      = torch.empty( 0,3 )  
 		group_sfderiv_i   = [ torch.empty( 0, self.dataset.input_size[iesp], 3) for iesp in range(self.dataset.N_species) ]
 		group_sfderiv_j   = [ torch.empty( 0, self.dataset.max_nnb, self.dataset.input_size[iesp], 3) for iesp in range(self.dataset.N_species) ]
 		group_indices_F_i = torch.zeros( torch.sum(group_N_atom_iesp).item(),dtype=int ) - 1
@@ -330,8 +330,8 @@ class PrepDataloader(object):
 			group_sfderiv_i[iesp] = eval(commands_i[iesp])
 			group_sfderiv_j[iesp] = eval(commands_j[iesp])
 
-		group_energy = torch.tensor( np.array(group_energy) ).double()
-		group_N_atom = torch.tensor( np.array(group_N_atom) ).double()
+		group_energy = torch.tensor( np.array(group_energy) )  
+		group_N_atom = torch.tensor( np.array(group_N_atom) )  
 
 
 		# Logical tensor to reorder energy output into their corresponding structures
@@ -355,7 +355,7 @@ class PrepDataloader(object):
 
 				aux_iesp.append(aux)
 
-			aux_iesp = torch.tensor( np.array(aux_iesp) ).double()
+			aux_iesp = torch.tensor( np.array(aux_iesp) )  
 			logic_tensor_reduce.append(aux_iesp)
 
 
@@ -423,7 +423,7 @@ class PrepDataloader(object):
 		Prepare batches for only energy training. See previous method for a more detailed explanation
 		"""
 
-		group_descrp = [ [ torch.empty( 0,self.dataset.input_size[iesp] ).double() for iesp in range(self.dataset.N_species) ] for ibatch in range(self.N_batch)]
+		group_descrp = [ [ torch.empty( 0,self.dataset.input_size[iesp] )   for iesp in range(self.dataset.N_species) ] for ibatch in range(self.N_batch)]
 		group_energy = [ [] for ibatch in range(self.N_batch) ]
 		index_from_database = [ [] for ibatch in range(self.N_batch) ]
 		group_N_atom = [ [] for ibatch in range(self.N_batch) ]
@@ -447,8 +447,8 @@ class PrepDataloader(object):
 				for iesp in range(self.dataset.N_species):
 					group_descrp[ibatch][iesp]    = torch.cat( ( group_descrp[ibatch][iesp], self.dataset[index_struc].descriptor[iesp] ) )
 
-			group_energy[ibatch] = torch.tensor( np.array(group_energy[ibatch]) ).double()
-			group_N_atom[ibatch] = torch.tensor( np.array(group_N_atom[ibatch]) ).double()
+			group_energy[ibatch] = torch.tensor( np.array(group_energy[ibatch]) )  
+			group_N_atom[ibatch] = torch.tensor( np.array(group_N_atom[ibatch]) )  
 
 		# Logical tensor:
 		logic_tensor_reduce = []
@@ -479,7 +479,7 @@ class PrepDataloader(object):
 					aux_iesp.append(aux)
 
 				aux_iesp = np.array(aux_iesp)
-				aux_iesp = torch.Tensor(aux_iesp).double()
+				aux_iesp = torch.Tensor(aux_iesp)  
 				aux_batch.append(aux_iesp)
 			logic_tensor_reduce.append(aux_batch)
 

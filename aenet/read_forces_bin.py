@@ -3,7 +3,7 @@ Subroutines to read '*.train.forces' fortran binary files and the '*.train.ascii
 """
 
 import numpy as np
-from data_classes import *
+from .data_classes import *
 import torch
 import array
 

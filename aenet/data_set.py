@@ -43,7 +43,7 @@ class StructureDataset(object):
 
 		for struc in self.list_struc:
 			struc.energy = (struc.energy - struc.N_atom*E_shift)*E_scaling
-
+        
 
 	def normalize_F(self, E_scaling, E_shift):
 
@@ -58,8 +58,8 @@ class StructureDataset(object):
 		scale = [ ]
 		for iesp in range(self.N_species):
 
-			sh = torch.Tensor(sfval_avg[iesp]).double()
-			sc = 1/torch.sqrt(torch.Tensor(sfval_cov[iesp]).double() - sh**2)
+			sh = torch.Tensor(sfval_avg[iesp])  
+			sc = 1/torch.sqrt(torch.Tensor(sfval_cov[iesp])   - sh**2)
 
 			# Check if scale is finite. If infite it means that some of the values are always 0
 			sc[sc == float("Inf")] = 0.0

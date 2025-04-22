@@ -53,6 +53,8 @@ class InputParameters(object):
 
 	def initialize(self):
 		self.test_split = float(self.test_split)/100
+		self.valid_split = float(self.valid_split)/100
+		print(self.valid_split)
 		self.epoch_size = int(self.epoch_size)
 		self.method     = self.method_param["method"].lower()
 		self.lr         = float(self.method_param["lr"]) 

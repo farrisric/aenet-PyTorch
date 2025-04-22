@@ -1,6 +1,6 @@
 import numpy as np
-from data_classes import *
-from read_forces_bin import *
+from .data_classes import *
+from .read_forces_bin import *
 
 
 def read_train_forces_together(tin):
@@ -120,7 +120,6 @@ def read_train(tin):
 		max_nnb = np.array([0 for i in range(len(species_index))])
 		for istruc in range(N_struc):
 			name, E, E_atomic_structure, species, coords, forces, descriptors = tf_read_struc_info(tf, species_index, E_atomic)
-
 			E_per_atom = E/len(coords)
 			if max_energy and E_per_atom > max_energy:
 				list_removed.append(name)

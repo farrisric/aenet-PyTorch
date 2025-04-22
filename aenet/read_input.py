@@ -5,7 +5,7 @@ Read 'train.in' input file
 read_train_in(infile) :: Returns an object of the class InputParameters()
 """
 
-from data_classes import *
+from .data_classes import *
 
 
 def read_keyword_logical(keyword, lines):
@@ -119,6 +119,7 @@ def read_train_in(infile):
 		# Compulsory parameters:
 		tin.train_file   ,_ = read_keyword_argument_same_line("trainingset", lines)
 		tin.test_split   ,_ = read_keyword_argument_same_line("testpercent", lines)
+		tin.valid_split  ,_ = read_keyword_argument_same_line("validpercent", lines)
 		tin.epoch_size   ,_ = read_keyword_argument_same_line("iterations", lines)
 		tin.method_param ,_ = read_keyword_argument_next_line("method", lines)
 		tin.sys_species, tin.networks_param = read_keyword_networks(lines)

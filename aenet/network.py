@@ -76,7 +76,7 @@ class NetAtom(nn.Module):
 			partial_E_ann[iesp] = self.functions[iesp](grp_descrp[iesp])
 
 		# Gather back all atoms corresponding to the same strucuture from partial_E_ann
-		list_E_ann = torch.zeros( (len(logic_reduce[0])), device=self.device ).double()
+		list_E_ann = torch.zeros( (len(logic_reduce[0])), device=self.device )  
 		for iesp in range(len(self.species)):
 			list_E_ann = list_E_ann + torch.einsum( "ij,ki->k", partial_E_ann[iesp], logic_reduce[iesp] )
 
@@ -89,9 +89,9 @@ class NetAtom(nn.Module):
 		[Force training] Compute atomic energy and forces for each atom in the current batch.
 		"""
 
-		E_atomic_ann = [0 for i in range(len(self.species))] #torch.empty((0,1), requires_grad=True).double()
-		aux_F_i      = torch.empty((0, 3 ), requires_grad=True, device=self.device).double()
-		aux_F_j      = torch.empty((0, max_nnb, 3), device=self.device , requires_grad=True).double()
+		E_atomic_ann = [0 for i in range(len(self.species))] #torch.empty((0,1), requires_grad=True)  
+		aux_F_i      = torch.empty((0, 3 ), requires_grad=True, device=self.device)  
+		aux_F_j      = torch.empty((0, max_nnb, 3), device=self.device , requires_grad=True)  
 
 		for iesp in range( len(self.species) ):
 
@@ -105,8 +105,8 @@ class NetAtom(nn.Module):
 
 			E_atomic_ann[iesp] = partial_E_ann
 
-			aux_F_j = torch.cat( (aux_F_j, torch.einsum("ik,ijkl->ijl", aux_dE_dG.double(), group_sfderiv_j[iesp].double())) )
-			aux_F_i = torch.cat( (aux_F_i, torch.einsum("ik,ikl->il", aux_dE_dG.double(), group_sfderiv_i[iesp].double())) )
+			aux_F_j = torch.cat( (aux_F_j, torch.einsum("ik,ijkl->ijl", aux_dE_dG  , group_sfderiv_j[iesp]  )) )
+			aux_F_i = torch.cat( (aux_F_i, torch.einsum("ik,ikl->il", aux_dE_dG  , group_sfderiv_i[iesp]  )) )
 
 
 
@@ -121,7 +121,7 @@ class NetAtom(nn.Module):
 		        -torch.sum( torch.index_select(aux_F_flat,0,flatt_indices).reshape(aux_shape), dim=1 )
 
 
-		list_E_ann = torch.zeros( (len(logic_reduce[0])), device=self.device ).double()
+		list_E_ann = torch.zeros( (len(logic_reduce[0])), device=self.device )  
 		for iesp in range(len(self.species)):
 			list_E_ann = list_E_ann + torch.einsum( "ij,ki->k", E_atomic_ann[iesp], logic_reduce[iesp] )
 
